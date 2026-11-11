@@ -324,6 +324,13 @@ class YfinanceFetcher(BaseFetcher):
         hist = ticker.history(period='2d')
         if hist.empty:
             return None
+        if len(hist) < 2:
+            # Yahoo 偶尔对 period='2d' 只回传当日一列（台湾加权指数 ^TWII 常见），
+            # 此时 prev_row == today_row 会把涨跌算成 0.00%，让复盘误判「平盘」。
+            # 改用 5d 窗口取前一交易日，取不到才维持单列行为。
+            wider = ticker.history(period='5d')
+            if not wider.empty and len(wider) >= 2:
+                hist = wider
         today_row = hist.iloc[-1]
         prev_row = hist.iloc[-2] if len(hist) > 1 else today_row
         price = float(today_row['Close'])
