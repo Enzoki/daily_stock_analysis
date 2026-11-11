@@ -128,7 +128,7 @@ PY
 
 支持范围：
 
-- 指数来源复用既有的 `DataFetcherManager.get_main_indices(region="tw")`（Yahoo Finance `^TWII` 台湾加权指数、`^TWOII` 柜买指数），无需新增数据源。
+- 指数来源复用既有的 `DataFetcherManager.get_main_indices(region="tw")`：加权指数走 Yahoo Finance `^TWII`；柜买指数因 Yahoo 已下架 `^TWOII`（调用返回 *No data found, symbol may be delisted*），改走 TPEx OpenAPI `https://www.tpex.org.tw/openapi/v1/tpex_index`（政府开放资料，OGDL v1，与既有三大法人 fetcher 同一来源家族），并以 `^TWOII` 作为 legacy 兜底。柜买指数取用失败时 **fail-open**：仅缺柜买段、不注入任何推测数字，不影响复盘产出。
 - 新增 `TW_PROFILE`（`mood_index_code=TWII`、台股新闻检索词）与 `TW_BLUEPRINT`（加权/柜买结构、电子权值股贡献、费半与台积电 ADR 连动、外资立场），复盘标题与 scope 名称本地化为「台股大盘复盘 / Taiwan Market Recap」。
 - `has_market_stats=False`、`has_sector_rankings=False`：台股不注入涨跌家数、涨停统计与板块涨跌榜，提示词明确要求不得臆造市场宽度或资金流数据。
 
