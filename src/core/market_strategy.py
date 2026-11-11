@@ -229,6 +229,40 @@ KR_BLUEPRINT = MarketStrategyBlueprint(
     ],
 )
 
+TW_BLUEPRINT = MarketStrategyBlueprint(
+    region="tw",
+    title="台股市场三段式复盘策略",
+    positioning="聚焦加权指数与柜买指数的结构分化、电子权值股与外资动向，形成次日交易计划。",
+    principles=[
+        "先看加权（TAIEX）与柜买（OTC）是否同向，再看台积电等电子权值股对指数的贡献。",
+        "把国际连动讲清楚：费半（SOX）、台积电 ADR 溢价与美股风险偏好如何映射到隔日台股。",
+        "只基于可得指数、新闻与价格行为判断，不臆造市场广度、三大法人买卖超或板块统计。",
+    ],
+    dimensions=[
+        StrategyDimension(
+            name="趋势结构",
+            objective="判断台股处于上攻、震荡还是防守阶段。",
+            checkpoints=["加权与柜买是否同向", "电子权值股是否支撑指数", "前高/前低与关键均线是否失守"],
+        ),
+        StrategyDimension(
+            name="国际连动",
+            objective="识别美股科技与半导体周期对台股的传导。",
+            checkpoints=["费半与那斯达克方向", "台积电 ADR 相对母股溢价变化", "外资在现货与期货的立场"],
+        ),
+        StrategyDimension(
+            name="主线轮动",
+            objective="提炼可延续的主线与需要回避的拥挤方向。",
+            checkpoints=["AI/半导体/伺服器链新闻催化", "航运、金融等非电子族群是否接棒", "量能是否支撑价格行为"],
+        ),
+    ],
+    action_framework=[
+        "进攻：加权与柜买共振上行 + 电子权值股确认 + 美股科技风险偏好改善。",
+        "均衡：指数或权值股分化，控制仓位并等待量价确认。",
+        "防守：权值股转弱、外资连续卖超或美股科技回档，优先控制回撤。",
+    ],
+)
+
+
 def get_market_strategy_blueprint(region: str) -> MarketStrategyBlueprint:
     """Return strategy blueprint by market region."""
     if region == "us":
@@ -239,4 +273,6 @@ def get_market_strategy_blueprint(region: str) -> MarketStrategyBlueprint:
         return JP_BLUEPRINT
     if region == "kr":
         return KR_BLUEPRINT
+    if region == "tw":
+        return TW_BLUEPRINT
     return CN_BLUEPRINT

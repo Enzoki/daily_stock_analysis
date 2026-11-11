@@ -92,6 +92,19 @@ KR_PROFILE = MarketProfile(
     has_sector_rankings=False,
 )
 
+TW_PROFILE = MarketProfile(
+    region="tw",
+    mood_index_code="TWII",
+    news_queries=[
+        "台股 大盘 收盘",
+        "Taiwan stock market TAIEX",
+        "台股 外资 三大法人 买卖超",
+    ],
+    prompt_index_hint="分析台湾加权指数（TAIEX）、柜买指数（OTC）等主要指数走势特点",
+    has_market_stats=False,
+    has_sector_rankings=False,
+)
+
 
 def get_profile(region: str) -> MarketProfile:
     """根据 region 返回对应的 MarketProfile"""
@@ -103,4 +116,6 @@ def get_profile(region: str) -> MarketProfile:
         return JP_PROFILE
     if region == "kr":
         return KR_PROFILE
+    if region == "tw":
+        return TW_PROFILE
     return CN_PROFILE
