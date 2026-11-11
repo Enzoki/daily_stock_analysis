@@ -8,6 +8,7 @@ without introducing import cycles.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Optional
 
@@ -36,6 +37,28 @@ _SUFFIX_TO_SPEC = {
     for suffix in spec.suffixes
 }
 
+# Taiwan leveraged/inverse ETFs and ETNs carry a trailing letter after the
+# numeric code (00631L 元大台灣50正2, 00632R 元大台灣50反1, 00685L 群益台灣加權正2).
+# Yahoo Finance serves them as ``00631L.TW``, so the numeric-only length rule
+# must admit a single trailing A-Z for the TW markets.
+_TW_LETTERED_BASE_RE = re.compile(r"^\d{4,6}[A-Z]$")
+
+
+def is_lettered_tw_base(base: str) -> bool:
+    """Return True for Taiwan lettered ETF bases such as ``00631L``/``00632R``."""
+
+    return bool(_TW_LETTERED_BASE_RE.match((base or "").strip().upper()))
+
+
+def suffix_base_matches_spec(base: str, spec: SuffixMarketSpec) -> bool:
+    """Return True when ``base`` is a valid base for ``spec``'s market."""
+
+    if base.isdigit() and len(base) in spec.digit_lengths:
+        return True
+    if spec.market == "tw":
+        return is_lettered_tw_base(base)
+    return False
+
 
 def split_suffix_symbol(stock_code: str) -> tuple[str, str] | None:
     """Return ``(base, suffix)`` for dotted symbols, upper-cased and stripped."""
@@ -59,7 +82,7 @@ def get_suffix_market(stock_code: str) -> Optional[str]:
     spec = _SUFFIX_TO_SPEC.get(suffix)
     if spec is None:
         return None
-    if not (base.isdigit() and len(base) in spec.digit_lengths):
+    if not suffix_base_matches_spec(base, spec):
         return None
     return spec.market
 
