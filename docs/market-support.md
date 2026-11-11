@@ -116,11 +116,28 @@ PY
 不承诺项：
 
 - 不承诺实时行情；Yahoo Finance 数据可能延迟或字段缺失。
-- 不承诺完整基本面、行业/板块、市场宽度、涨跌家数或台股大盘复盘；`MARKET_REVIEW_REGION` 仍只接受 `cn/hk/us/jp/kr/both` 或这些市场的逗号子集。
+- 不承诺完整基本面、行业/板块、市场宽度或涨跌家数；台股大盘复盘见下节（`MARKET_REVIEW_REGION=tw`），`MARKET_REVIEW_REGION` 接受 `cn/hk/us/jp/kr/tw/both` 或这些市场的逗号子集。
 - 台股股票索引/种子和 Web 自动补全仍未完整接入；告警 MarketRegion 与后端 Market Light 告警仍为 `cn/hk/us`，未含 `tw`。
 - 不补齐 Portfolio 的 TWD 汇率、成本、市值完整口径；台股 Portfolio 当前属于 partial valuation 市场。
 
 回滚方式：移除 `tw` 市场识别、交易日历注册、YFinance 路由扩展、三大法人资料层/报告消费、TWD 标注、服务层/API 市场枚举及前端市场类型放行，并删除本文档中的能力声明。
+
+## 台股大盘复盘（`MARKET_REVIEW_REGION=tw`）
+
+`MARKET_REVIEW_REGION` 新增 `tw`：在此之前该值会被 `Config._parse_market_review_region()` 判为非法并静默回落为 `cn`（日志只有一行 WARNING），台股用户因此拿到 A 股复盘。
+
+支持范围：
+
+- 指数来源复用既有的 `DataFetcherManager.get_main_indices(region="tw")`（Yahoo Finance `^TWII` 台湾加权指数、`^TWOII` 柜买指数），无需新增数据源。
+- 新增 `TW_PROFILE`（`mood_index_code=TWII`、台股新闻检索词）与 `TW_BLUEPRINT`（加权/柜买结构、电子权值股贡献、费半与台积电 ADR 连动、外资立场），复盘标题与 scope 名称本地化为「台股大盘复盘 / Taiwan Market Recap」。
+- `has_market_stats=False`、`has_sector_rankings=False`：台股不注入涨跌家数、涨停统计与板块涨跌榜，提示词明确要求不得臆造市场宽度或资金流数据。
+
+边界与影响：
+
+- `both` 展开为 `cn,hk,us,jp,kr,tw`（六市场顺序），`MARKET_REVIEW_REGION_ALL` 同步变化；需要旧边界时显式配置子集。
+- Market Light 快照与大盘红绿灯告警区域不变（仍为 `cn/hk/us`，服务层 `jp/kr/tw` 计分另见前述章节）。
+
+回滚方式：从 `MARKET_REVIEW_REGION_ORDER`、`_MARKET_REVIEW_MARKETS` 与 `config_registry` 的可选值中移除 `tw`，并删除 `TW_PROFILE`、`TW_BLUEPRINT` 及 `MarketAnalyzer` 的 `tw` 分支（`_get_market_scope_name`、`_get_turnover_unit_label`、`_format_turnover_value`、`_get_index_hint`、`_get_review_title`、`search_market_news` 的市场标签）。
 
 ## 日本/韩国 Portfolio 与 Market Light 边界（Issue #1815 Phase 3）
 
@@ -130,7 +147,7 @@ Portfolio 允许 JP/KR 账户、交易和持仓快照进入现有链路，但会
 - Market Light 快照和 Market Light 告警仍只支持 `cn` / `hk` / `us`。
 - Web 告警市场下拉不展示 `jp` / `kr`；后端 `normalize_market_region()` 对 `jp` / `kr` 返回显式 unsupported 错误。
 - Web 设置页中 `MARKET_REVIEW_REGION` 从固定枚举下拉收敛为自由文本输入，用于保存 `cn,us,jp`、`cn,hk,us` 等逗号分隔子集；该 UI 变化只影响大盘复盘配置，不影响 Market Light 告警市场枚举。
-- `MARKET_REVIEW_REGION` 既有 `cn`、`hk`、`us` 可原样保留；若用户希望维持 JP/KR 扩展前 `both` 对应的三市场复盘边界，应改为 `cn,hk,us`；只有希望纳入五市场复盘时才继续使用 `both` 或显式配置 `cn,hk,us,jp,kr`。
+- `MARKET_REVIEW_REGION` 既有 `cn`、`hk`、`us` 可原样保留；若用户希望维持 JP/KR 扩展前 `both` 对应的三市场复盘边界，应改为 `cn,hk,us`；`both` 现在展开为六市场 `cn,hk,us,jp,kr,tw`，只要部分市场时请显式配置子集（例如 `cn,hk,us,jp,kr`）。
 - 该轮边界收敛不改动 LLM Provider / Model / Base URL 的持久化语义，也不执行默认模型、运行时配置清理或回写；配置更新仍是**原子 upsert**（`ConfigManager.apply_updates`），保存/导入只写入提交的键，未提交的 `LITELLM_MODEL`、`LITELLM_FALLBACK_MODELS`、`AGENT_LITELLM_MODEL`、`VISION_MODEL`、`OPENAI_BASE_URL` 等旧值保留不清空。
 - 可直接核验的配置兼容证据：本轮未新增或替换外部 provider/model/Base URL，仍沿用 LiteLLM OpenAI-compatible 路由（<https://docs.litellm.ai/docs/providers/openai_compatible>）、OpenAI Chat Completions 请求形状（<https://platform.openai.com/docs/api-reference/chat/create>），以及 [LLM 服务商配置指南](llm-providers.md#官方来源与兼容性) 中集中维护的各 provider 官方来源链接。当前运行时依赖窗口以 `requirements.txt` 的 `litellm>=1.80.10,!=1.82.7,!=1.82.8,<1.99.0` 为准；旧配置没有迁移脚本或清理分支，保存/导入仍只通过 `ConfigManager.apply_updates` 写入本次提交键。回退路径是恢复变更前 `.env`/配置备份中的 `MARKET_REVIEW_REGION`，或直接 revert 本 PR；未提交的 `LITELLM_CONFIG`、`LLM_CHANNELS`、`LLM_OPENAI_*`、`LITELLM_MODEL`、`AGENT_LITELLM_MODEL`、`LITELLM_FALLBACK_MODELS`、`VISION_MODEL`、`OPENAI_*` 等既有运行时配置不需要迁移。回归证据为 `tests/test_system_config_service.py::SystemConfigServiceTestCase::test_update_market_review_region_does_not_trigger_runtime_model_cleanup` 与 `tests/test_config_env_compat.py::test_market_review_region_updates_do_not_change_llm_provider_model_contract`。
 - Web UI 可视证据口径：Market Light 告警目标范围切到“大盘市场”时，市场区域下拉只显示 A 股、港股、美股，不显示日股/韩股；设置页 `MARKET_REVIEW_REGION` 渲染为可输入逗号分隔值的文本框。当前仓库不保存一次性截图证据，可替代证据为 `apps/dsa-web/src/components/alerts/__tests__/AlertRuleForm.test.tsx`、`apps/dsa-web/src/components/settings/__tests__/SettingsField.test.tsx` 和 `apps/dsa-web/tests/system_config_i18n.test.ts` 的断言。
