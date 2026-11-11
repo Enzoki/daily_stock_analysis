@@ -14,6 +14,7 @@ from typing import List, Optional
 from data_provider.base import canonical_stock_code
 from src.services.market_symbol_utils import (
     get_suffix_market,
+    is_lettered_tw_base,
     normalize_suffix_market_symbol,
     suffix_base_lookup_allowed,
 )
@@ -151,7 +152,11 @@ def _is_us_index_code(code: str) -> bool:
 
 def _valid_exchange_code(exchange: str, base: str, digit_lens: tuple[int, ...]) -> bool:
     if not (base.isdigit() and len(base) in digit_lens):
-        return False
+        # Taiwan leveraged/inverse ETFs/ETNs append a letter to the numeric
+        # code (00631L / 00632R) but keep the same Yahoo ``.TW``/``.TWO``
+        # suffix; accept them instead of rejecting the whole stock list.
+        if not (exchange in {"TW", "TWO"} and is_lettered_tw_base(base)):
+            return False
     if exchange in {"SH", "SS"}:
         return _infer_cn_exchange(base) == "SH"
     if exchange == "SZ":
