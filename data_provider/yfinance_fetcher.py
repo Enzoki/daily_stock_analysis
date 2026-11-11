@@ -34,6 +34,7 @@ from tenacity import (
 from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, _is_hk_market, is_bse_code
 from .realtime_types import UnifiedRealtimeQuote, RealtimeSource
 from .us_index_mapping import get_us_index_yf_symbol, is_us_stock_code
+from .tw_index_provider import fetch_tw_otc_index_quote
 from .yfinance_fundamental_adapter import _safe_float
 from src.services.market_symbol_utils import get_suffix_market, is_suffix_market_symbol
 
@@ -323,6 +324,13 @@ class YfinanceFetcher(BaseFetcher):
         hist = ticker.history(period='2d')
         if hist.empty:
             return None
+        if len(hist) < 2:
+            # Yahoo 偶尔对 period='2d' 只回传当日一列（台湾加权指数 ^TWII 常见），
+            # 此时 prev_row == today_row 会把涨跌算成 0.00%，让复盘误判「平盘」。
+            # 改用 5d 窗口取前一交易日，取不到才维持单列行为。
+            wider = ticker.history(period='5d')
+            if not wider.empty and len(wider) >= 2:
+                hist = wider
         today_row = hist.iloc[-1]
         prev_row = hist.iloc[-2] if len(hist) > 1 else today_row
         price = float(today_row['Close'])
@@ -504,26 +512,37 @@ class YfinanceFetcher(BaseFetcher):
         return None
 
     def _get_tw_main_indices(self, yf) -> Optional[List[Dict[str, Any]]]:
-        """获取台湾主要指数行情（加权指数 ^TWII、柜买指数 ^TWOII），复用 _fetch_yf_ticker_data。"""
-        tw_indices = {
-            'TWII': ('^TWII', '台湾加权指数'),
-            'TWOII': ('^TWOII', '台湾柜买指数'),
-        }
-        results = []
+        """获取台湾主要指数行情（加权指数 ^TWII、柜买指数）。
+
+        柜买指数优先走 TPEx OpenAPI（`data_provider/tw_index_provider.py`）：
+        Yahoo 已下架 `^TWOII`（每次调用都返回 "No data found, symbol may be
+        delisted"），仍保留 `^TWOII` 作为 TPEx 失败时的 legacy 兜底。
+        """
+        results: List[Dict[str, Any]] = []
         try:
-            for code, (yf_symbol, name) in tw_indices.items():
-                try:
-                    item = self._fetch_yf_ticker_data(yf, yf_symbol, name, code)
-                    if item:
-                        results.append(item)
-                        logger.debug(f"[Yfinance] 获取台湾指数 {name} 成功")
-                except Exception as e:
-                    logger.warning(f"[Yfinance] 获取台湾指数 {name} 失败: {e}")
-            if results:
-                logger.info(f"[Yfinance] 成功获取 {len(results)} 个台湾指数行情")
-                return results
+            item = self._fetch_yf_ticker_data(yf, '^TWII', '台湾加权指数', 'TWII')
+            if item:
+                results.append(item)
+                logger.debug("[Yfinance] 获取台湾指数 台湾加权指数 成功")
         except Exception as e:
-            logger.error(f"[Yfinance] 获取台湾指数行情失败: {e}")
+            logger.warning(f"[Yfinance] 获取台湾指数 台湾加权指数 失败: {e}")
+
+        otc_item: Optional[Dict[str, Any]] = None
+        try:
+            otc_item = fetch_tw_otc_index_quote()
+        except Exception as e:  # 该 helper 自身 fail-open，这里再兜一层
+            logger.warning(f"[Yfinance] 获取台湾柜买指数(TPEx) 失败: {e}")
+        if otc_item is None:
+            try:
+                otc_item = self._fetch_yf_ticker_data(yf, '^TWOII', '台湾柜买指数', 'TWOII')
+            except Exception as e:
+                logger.warning(f"[Yfinance] 获取台湾指数 台湾柜买指数 失败: {e}")
+        if otc_item:
+            results.append(otc_item)
+
+        if results:
+            logger.info(f"[Yfinance] 成功获取 {len(results)} 个台湾指数行情")
+            return results
         return None
 
     def _is_us_stock(self, stock_code: str) -> bool:

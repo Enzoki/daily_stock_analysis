@@ -87,12 +87,17 @@ def test_market_guidelines_for_tw_keep_taiwan_context() -> None:
     assert "龙虎榜" in tw_guidelines
 
 
-def test_yfinance_keeps_tw_suffix_codes_and_indices() -> None:
+def test_yfinance_keeps_tw_suffix_codes_and_indices(monkeypatch) -> None:
     fetcher = YfinanceFetcher()
 
     assert fetcher._convert_stock_code("2330.TW") == "2330.TW"
     assert fetcher._convert_stock_code("6505.TWO") == "6505.TWO"
     assert fetcher._convert_stock_code("006208.TW") == "006208.TW"
+
+    # 柜买指数现在优先走 TPEx OpenAPI；这里降到 legacy ^TWOII 路径，验证仍保留兜底。
+    monkeypatch.setattr(
+        "data_provider.yfinance_fetcher.fetch_tw_otc_index_quote", lambda **_: None
+    )
 
     captured = []
 
