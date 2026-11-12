@@ -1,10 +1,14 @@
 name: 每日股票分析
 
 on:
-  # 定时触发 - 每天北京时间 18:00 (UTC 10:00)
-  schedule:
-    - cron: '0 10 * * 1-5'     # 周一到周五，UTC 10:00 = 北京时间 18:00
-  
+  # 定时触发已停用：GitHub 的 schedule 在本 repo 从未准时（建立至今 0 次 schedule
+  # 触发，2026-11-12 10:00 UTC 直接漏发）。改由外部常开机器（J3455E）用
+  # workflow_dispatch 触发：trigger_daily_analysis.sh，台北 18:00 = UTC 10:00。
+  # 要恢复 GitHub 内建排程，取消下面两行注释，并同时停掉外部触发器，
+  # 否则会一天跑两次、Telegram 收到两份报告。
+  # schedule:
+  #   - cron: '0 10 * * 1-5'     # 周一到周五，UTC 10:00 = 北京时间 18:00
+
   # 手动触发
   workflow_dispatch:
     inputs:
