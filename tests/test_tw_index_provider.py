@@ -207,5 +207,6 @@ def test_yfinance_tw_indices_returns_none_when_both_legs_fail(monkeypatch) -> No
 
     monkeypatch.setattr(fetcher, "_fetch_yf_ticker_data", lambda *a, **k: None)
     monkeypatch.setattr("data_provider.yfinance_fetcher.fetch_tw_otc_index_quote", lambda: None)
+    monkeypatch.setattr("data_provider.yfinance_fetcher.fetch_twse_taiex_quote", lambda: None)
 
     assert fetcher._get_tw_main_indices(object()) is None

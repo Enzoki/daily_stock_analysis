@@ -34,7 +34,14 @@ from tenacity import (
 from .base import BaseFetcher, DataFetchError, STANDARD_COLUMNS, _is_hk_market, is_bse_code
 from .realtime_types import UnifiedRealtimeQuote, RealtimeSource
 from .us_index_mapping import get_us_index_yf_symbol, is_us_stock_code
-from .tw_index_provider import fetch_tw_otc_index_quote
+from .tw_index_provider import (
+    TW_OTC_INDEX_CODE,
+    TW_OTC_INDEX_NAME,
+    TW_TAIEX_CODE,
+    TW_TAIEX_NAME,
+    fetch_tw_otc_index_quote,
+    fetch_twse_taiex_quote,
+)
 from .yfinance_fundamental_adapter import _safe_float
 from src.services.market_symbol_utils import get_suffix_market, is_suffix_market_symbol
 
@@ -512,31 +519,56 @@ class YfinanceFetcher(BaseFetcher):
         return None
 
     def _get_tw_main_indices(self, yf) -> Optional[List[Dict[str, Any]]]:
-        """获取台湾主要指数行情（加权指数 ^TWII、柜买指数）。
+        """获取台湾主要指数行情（加权指数、柜买指数），官方来源优先。
 
-        柜买指数优先走 TPEx OpenAPI（`data_provider/tw_index_provider.py`）：
-        Yahoo 已下架 `^TWOII`（每次调用都返回 "No data found, symbol may be
-        delisted"），仍保留 `^TWOII` 作为 TPEx 失败时的 legacy 兜底。
+        - 加權：證交所 FMTQIK（`data_provider/tw_index_provider.py`）优先，因为
+          Yahoo `^TWII` 会落后一整个交易日（收盤/漲跌会被当成「今日」写进复盘），
+          且 FMTQIK 有官方成交金額；Yahoo 只用来补日內開高低（收盤一致才採用）。
+        - 櫃買：Yahoo 已下架 `^TWOII`，改走 TPEx OpenAPI，`^TWOII` 作为 legacy 兜底。
         """
         results: List[Dict[str, Any]] = []
+
+        yahoo_taiex: Optional[Dict[str, Any]] = None
         try:
-            item = self._fetch_yf_ticker_data(yf, '^TWII', '台湾加权指数', 'TWII')
-            if item:
-                results.append(item)
-                logger.debug("[Yfinance] 获取台湾指数 台湾加权指数 成功")
+            yahoo_taiex = self._fetch_yf_ticker_data(yf, '^TWII', TW_TAIEX_NAME, TW_TAIEX_CODE)
         except Exception as e:
-            logger.warning(f"[Yfinance] 获取台湾指数 台湾加权指数 失败: {e}")
+            logger.warning(f"[Yfinance] 获取台湾指数 {TW_TAIEX_NAME} 失败: {e}")
+
+        taiex: Optional[Dict[str, Any]] = None
+        try:
+            taiex = fetch_twse_taiex_quote()
+        except Exception as e:  # 该 helper 自身 fail-open，这里再兜一层
+            logger.warning(f"[Yfinance] 證交所加權指數获取失败: {e}")
+
+        if taiex is not None and yahoo_taiex:
+            # 只有兩邊收盤一致（同一個交易日）才把 Yahoo 的日內開高低補進來，
+            # 避免把落後一天的 Yahoo 高低點掛到證交所的收盤上。
+            try:
+                same_day = abs(float(yahoo_taiex.get('current', 0)) - taiex['current']) \
+                    <= max(0.05, taiex['current'] * 0.0005)
+            except (TypeError, ValueError):
+                same_day = False
+            if same_day:
+                # 只補官方缺少的欄位，不覆蓋證交所已經給的開高低。
+                for field in ('open', 'high', 'low', 'amplitude'):
+                    value = yahoo_taiex.get(field)
+                    if isinstance(value, (int, float)) and value and not taiex.get(field):
+                        taiex[field] = float(value)
+
+        taiex_item = taiex or yahoo_taiex
+        if taiex_item:
+            results.append(taiex_item)
 
         otc_item: Optional[Dict[str, Any]] = None
         try:
             otc_item = fetch_tw_otc_index_quote()
-        except Exception as e:  # 该 helper 自身 fail-open，这里再兜一层
+        except Exception as e:
             logger.warning(f"[Yfinance] 获取台湾柜买指数(TPEx) 失败: {e}")
         if otc_item is None:
             try:
-                otc_item = self._fetch_yf_ticker_data(yf, '^TWOII', '台湾柜买指数', 'TWOII')
+                otc_item = self._fetch_yf_ticker_data(yf, '^TWOII', TW_OTC_INDEX_NAME, TW_OTC_INDEX_CODE)
             except Exception as e:
-                logger.warning(f"[Yfinance] 获取台湾指数 台湾柜买指数 失败: {e}")
+                logger.warning(f"[Yfinance] 获取台湾指数 {TW_OTC_INDEX_NAME} 失败: {e}")
         if otc_item:
             results.append(otc_item)
 
