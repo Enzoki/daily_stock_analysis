@@ -72,9 +72,10 @@ class MarketIndex:
     volume: float = 0.0          # 成交量（手）
     amount: float = 0.0          # 成交额（元）
     amplitude: float = 0.0       # 振幅(%)
-    
+    as_of: str = ""              # 資料日期 YYYY-MM-DD（官方來源可能落後於今日）
+
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             'code': self.code,
             'name': self.name,
             'current': self.current,
@@ -87,6 +88,9 @@ class MarketIndex:
             'amount': self.amount,
             'amplitude': self.amplitude,
         }
+        if self.as_of:
+            payload['as_of'] = self.as_of
+        return payload
 
 
 @dataclass
@@ -569,6 +573,24 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         # 1. 获取主要指数行情（按 region 切换 A 股/美股）
         overview.indices = self._get_main_indices()
 
+        # 指数带官方「資料日」时（台股走證交所/TPEx），用资料日当报告日期：
+        # 否则 Yahoo 落后一交易日时，会把前一日的收盘写成「今日」而与新闻冲突。
+        data_dates = [
+            idx.as_of for idx in overview.indices if getattr(idx, "as_of", "")
+        ]
+        if data_dates:
+            latest = max(data_dates)
+            if len(latest) == 8 and latest.isdigit():
+                latest = f"{latest[:4]}-{latest[4:6]}-{latest[6:]}"
+            if latest != overview.date:
+                logger.info(
+                    "[大盘] %s 报告日期改用指数资料日：%s -> %s",
+                    self._log_context(),
+                    overview.date,
+                    latest,
+                )
+                overview.date = latest
+
         # 2. 获取涨跌统计（A 股有，美股无等效数据）
         if self.profile.has_market_stats:
             self._get_market_statistics(overview)
@@ -608,7 +630,8 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                         prev_close=item['prev_close'],
                         volume=item['volume'],
                         amount=item['amount'],
-                        amplitude=item['amplitude']
+                        amplitude=item['amplitude'],
+                        as_of=str(item.get('as_of') or ''),
                     )
                     indices.append(index)
 
